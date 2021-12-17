@@ -21,6 +21,14 @@ public class FileContext {
     private boolean currentPathIsEmpty;
     private final FileDirStatistics currentPathStatistics;
 
+    public static FileContext newInstance(File rootPathFile) throws IOException {
+        return new FileContext(rootPathFile, false);
+    }
+
+    public static FileContext newInstance(File rootPathFile, boolean create) throws IOException {
+        return new FileContext(rootPathFile, create);
+    }
+
     public static FileContext newInstance(String rootPath) throws IOException {
         return new FileContext(rootPath, false);
     }
@@ -29,9 +37,9 @@ public class FileContext {
         return new FileContext(rootPath, create);
     }
 
-    private FileContext(String rootPath, boolean create) throws IOException {
-        this.rootPath = rootPath;
-        this.rootPathFile = new File(rootPath);
+    private FileContext(File rootPathFile, boolean create) throws IOException {
+        this.rootPath = rootPathFile.getAbsolutePath();
+        this.rootPathFile = rootPathFile;
         if (!this.rootPathFile.exists()) {
             if (create) {
                 if (!new File(rootPathFile.getAbsolutePath()).mkdirs()) {
@@ -51,6 +59,10 @@ public class FileContext {
         this.currentPathStatistics = new FileDirStatistics();
         // 加载当前目录所有文件
         loadCurrentPathFiles();
+    }
+
+    private FileContext(String rootPath, boolean create) throws IOException {
+        this(new File(rootPath), create);
     }
 
     public String getCurrentPath() {
