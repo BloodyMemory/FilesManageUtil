@@ -1,21 +1,25 @@
 package com.jadefinger.utils;
 
+import com.jadefinger.utils.exception.InvalidFileNameException;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public class FileContext {
 
-    private String rootPath;
-    private File rootPathFile;
+    private final String rootPath;
+    private final File rootPathFile;
     private String currentPath;
+    private String currentRelativePath;
     private File currentPathFile;
-    private Map<String, File> currentFileMap;
+    private final Map<String, File> currentFileMap;
     private boolean currentPathIsEmpty;
-    private FileDirStatistics currentPathStatistics;
+    private final FileDirStatistics currentPathStatistics;
 
     public static FileContext newInstance(String rootPath) throws IOException {
         return new FileContext(rootPath, false);
@@ -41,11 +45,36 @@ public class FileContext {
             throw new IOException("根路径不是目录");
         }
         this.currentPath = rootPath;
-        this.currentPathFile = new File(rootPath);
+        this.currentRelativePath = File.separator;
+        this.currentPathFile = rootPathFile;
         this.currentFileMap = new LinkedHashMap<>();
         this.currentPathStatistics = new FileDirStatistics();
         // 加载当前目录所有文件
         loadCurrentPathFiles();
+    }
+
+    public String getCurrentPath() {
+        return currentPath;
+    }
+
+    public String getCurrentRelativePath() {
+        return currentRelativePath;
+    }
+
+    public boolean isCurrentPathIsEmpty() {
+        return currentPathIsEmpty;
+    }
+
+    public String getRootPath() {
+        return rootPath;
+    }
+
+    public File getRootPathFile() {
+        return rootPathFile;
+    }
+
+    public File getCurrentPathFile() {
+        return currentPathFile;
     }
 
     private void loadCurrentPathFiles() {
@@ -61,6 +90,12 @@ public class FileContext {
                     this.currentPathStatistics.addFile(file);
                 }
             }
+        }
+    }
+
+    private void checkFileName(String fileName) {
+        if (fileName == null || fileName.equals("") || fileName.contains(File.separator)) {
+            throw new InvalidFileNameException("非法名称");
         }
     }
 
@@ -81,14 +116,68 @@ public class FileContext {
      * @param dirName
      * @return
      */
-    public FileContext openDir(String dirName) throws IOException {
+    public FileContext openDir(String dirName) throws InvalidFileNameException {
         File toOpenDir = this.currentFileMap.get(dirName);
-        if (toOpenDir.isDirectory()) {
+        if (toOpenDir != null && toOpenDir.isDirectory()) {
+            this.currentRelativePath += dirName + File.separator;
             this.currentPathFile = toOpenDir;
             this.currentPath = this.currentPathFile.getAbsolutePath();
             loadCurrentPathFiles();
         } else {
-            throw new IOException("目录不存在");
+            throw new InvalidFileNameException("目录不存在");
+        }
+        return this;
+    }
+
+    /**
+     * 进入根目录
+     *
+     * @return
+     */
+    public FileContext openRootDir() {
+        this.currentPath = this.rootPath;
+        this.currentRelativePath = File.separator;
+        this.currentPathFile = this.rootPathFile;
+        loadCurrentPathFiles();
+        return this;
+    }
+
+    /**
+     * 进入多层目录
+     *
+     * @param dirNames
+     * @return
+     * @throws InvalidFileNameException
+     */
+    public FileContext openDirs(String dirNames) throws InvalidFileNameException {
+        if (dirNames != null) {
+            if (dirNames.startsWith(File.separator)) {
+                dirNames = dirNames.substring(1);
+            }
+            String regex = "/";
+            if (File.separator.equals("\\")) {
+                regex = "\\\\";
+            }
+            String[] split = dirNames.split(regex);
+            for (String dirName : split) {
+                openDir(dirName);
+            }
+        }
+        return this;
+    }
+
+    /**
+     * 进入多层目录
+     *
+     * @param dirNames
+     * @return
+     * @throws InvalidFileNameException
+     */
+    public FileContext openDirs(String... dirNames) throws InvalidFileNameException {
+        if (dirNames != null && dirNames.length > 0) {
+            for (String dirName : dirNames) {
+                openDir(dirName);
+            }
         }
         return this;
     }
@@ -106,6 +195,8 @@ public class FileContext {
                 //当前目录是根目录已经无法再向上级目录跳转
                 throw new IOException("根目录已经无法再向上级目录跳转");
             } else {
+                this.currentRelativePath = this.currentRelativePath.substring(0, this.currentRelativePath.length() - 1);
+                this.currentRelativePath = this.currentRelativePath.substring(0, this.currentRelativePath.lastIndexOf(File.separator) + 1);
                 this.currentPathFile = parentFile;
                 this.currentPath = this.currentPathFile.getAbsolutePath();
                 loadCurrentPathFiles();
@@ -122,6 +213,7 @@ public class FileContext {
      * @param fileName
      */
     public File newFile(String fileName) {
+        checkFileName(fileName);
         File newFile = new File(this.currentPathFile.getAbsolutePath() + File.separator + fileName);
         try {
             if (newFile.createNewFile()) {
@@ -146,12 +238,52 @@ public class FileContext {
     }
 
     /**
+     * 创建多层级目录
+     *
+     * @param dirNames
+     * @return
+     */
+    public boolean newDirs(String dirNames) {
+        boolean result;
+        if (dirNames.startsWith(File.separator)) {
+            //根目录开始
+            result = new File(this.rootPathFile.getAbsolutePath() + dirNames).mkdirs();
+        } else {
+            //当前目录开始
+            result = new File(this.currentPathFile.getAbsolutePath() + File.separator + dirNames).mkdirs();
+        }
+        loadCurrentPathFiles();
+        return result;
+    }
+
+    /**
+     * 当前目录创建多级目录
+     *
+     * @param dirNames
+     * @return
+     */
+    public boolean newDirsCurrent(String... dirNames) {
+        boolean result = false;
+        if (dirNames != null && dirNames.length > 0) {
+            StringBuffer buffer = new StringBuffer();
+            for (String dirName : dirNames) {
+                buffer.append(dirName).append(File.separator);
+            }
+            buffer.deleteCharAt(buffer.length() - 1);
+            result = newDirs(buffer.toString());
+        }
+        loadCurrentPathFiles();
+        return result;
+    }
+
+    /**
      * 删除当前文件或者目录
      *
      * @param fileName
      * @return
      */
     public boolean delFileOrDir(String fileName) {
+        checkFileName(fileName);
         File toDelFile = new File(this.currentPathFile.getAbsolutePath() + File.separator + fileName);
         if (toDelFile.exists()) {
             boolean r = toDelFile.delete();
@@ -169,6 +301,8 @@ public class FileContext {
      * @return
      */
     public boolean rename(String fileName, String newName) throws IOException {
+        checkFileName(fileName);
+        checkFileName(newName);
         File toRenameFile = new File(this.currentPathFile.getAbsolutePath() + File.separator + fileName);
         if (!toRenameFile.exists()) {
             throw new IOException("要重命名的文件不存在");
@@ -185,6 +319,7 @@ public class FileContext {
      * @return
      */
     public File getFile(String fileName) {
+        checkFileName(fileName);
         return this.currentFileMap.get(fileName);
     }
 
@@ -200,14 +335,21 @@ public class FileContext {
         if (sourceFile != null && targetFile != null && targetFile.isDirectory()) {
             if (sourceFile.isDirectory()) {
                 //目录要遍历所有子目录和以下所有文件
-                // TODO copyTO
+                targetFile = new File(targetFile.getAbsolutePath() + File.separator + sourceFile.getName());
+                if (!targetFile.exists()) {
+                    targetFile.mkdirs();
+                }
+                for (File file : Objects.requireNonNull(sourceFile.listFiles())) {
+                    copyTo(file, targetFile, replace);
+                }
             } else {
                 //文件直接复制
                 String targetFilePath = targetFile.getAbsolutePath() + File.separator + sourceFile.getName();
-//                File targetF = new File(targetFilePath);
-                //复制文件
-                writeToFile(sourceFile, targetFilePath);
-
+                File targetFileCopy = new File(targetFilePath);
+                if (!targetFileCopy.exists() || replace) {
+                    //复制文件
+                    writeToFile(sourceFile, targetFilePath);
+                }
             }
         }
     }
