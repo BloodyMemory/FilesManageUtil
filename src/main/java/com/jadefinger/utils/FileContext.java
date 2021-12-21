@@ -1,5 +1,6 @@
 package com.jadefinger.utils;
 
+import com.jadefinger.utils.exception.FileContextException;
 import com.jadefinger.utils.exception.InvalidFileNameException;
 
 import java.io.File;
@@ -335,6 +336,32 @@ public class FileContext {
         return this.currentFileMap.get(fileName);
     }
 
+    /**
+     * 拷贝到当前目录
+     *
+     * @param sourceFile
+     * @param replace
+     */
+    public void copyToCurrent(File sourceFile, boolean replace) throws FileContextException {
+        copyTo(sourceFile, currentPathFile, replace, null);
+    }
+
+    /**
+     * 将文件拷贝到当前目录
+     *
+     * @param sourceFile
+     * @param replace
+     * @param newFileName
+     * @throws FileContextException
+     */
+    public void copyFileToCurrent(File sourceFile, boolean replace, String newFileName) throws FileContextException {
+        if (sourceFile.isFile()) {
+            copyTo(sourceFile, currentPathFile, replace, newFileName);
+        } else {
+            throw new FileContextException("源数据必须是文件类型");
+        }
+    }
+
 
     /**
      * 是否替换重复文件
@@ -343,7 +370,7 @@ public class FileContext {
      * @param targetFile
      * @param replace
      */
-    public void copyTo(File sourceFile, File targetFile, boolean replace) {
+    public void copyTo(File sourceFile, File targetFile, boolean replace, String newFileName) throws FileContextException {
         if (sourceFile != null && targetFile != null && targetFile.isDirectory()) {
             if (sourceFile.isDirectory()) {
                 //目录要遍历所有子目录和以下所有文件
@@ -352,21 +379,23 @@ public class FileContext {
                     targetFile.mkdirs();
                 }
                 for (File file : Objects.requireNonNull(sourceFile.listFiles())) {
-                    copyTo(file, targetFile, replace);
+                    copyTo(file, targetFile, replace, null);
                 }
             } else {
                 //文件直接复制
-                String targetFilePath = targetFile.getAbsolutePath() + File.separator + sourceFile.getName();
+                String targetFilePath = targetFile.getAbsolutePath() + File.separator + (newFileName != null ? newFileName : sourceFile.getName());
                 File targetFileCopy = new File(targetFilePath);
                 if (!targetFileCopy.exists() || replace) {
                     //复制文件
                     writeToFile(sourceFile, targetFilePath);
                 }
             }
+        } else {
+            throw new FileContextException("源文件或者目标目录为空");
         }
     }
 
-    private void writeToFile(File file, String filePath) {
+    private void writeToFile(File file, String filePath) throws FileContextException {
         if (file == null) {
             return;
         }
@@ -382,6 +411,7 @@ public class FileContext {
             fos.flush();
         } catch (IOException e) {
             e.printStackTrace();
+            throw new FileContextException("文件写入失败");
         } finally {
             try {
                 if (fos != null)
