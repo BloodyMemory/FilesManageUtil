@@ -164,12 +164,12 @@ public class FileContext {
      */
     public FileContext openDirs(String dirNames) throws InvalidFileNameException {
         if (dirNames != null) {
-            if (dirNames.startsWith(File.separator)) {
-                dirNames = dirNames.substring(1);
-            }
             String regex = "/";
             if (File.separator.equals("\\")) {
                 regex = "\\\\";
+            }
+            if (dirNames.startsWith("\\")||dirNames.startsWith("/")) {
+                dirNames = dirNames.substring(1);
             }
             String[] split = dirNames.split(regex);
             for (String dirName : split) {
