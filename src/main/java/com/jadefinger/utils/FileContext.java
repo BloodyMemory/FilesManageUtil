@@ -17,28 +17,52 @@ public class FileContext {
     private final File rootPathFile;
     private String currentPath;
     private String currentRelativePath;
+    private final String visualPathSeparator;
+    private final String systemPathSeparator;
     private File currentPathFile;
     private final Map<String, File> currentFileMap;
     private boolean currentPathIsEmpty;
     private final FileDirStatistics currentPathStatistics;
 
     public static FileContext newInstance(File rootPathFile) throws IOException {
-        return new FileContext(rootPathFile, false);
+        return new FileContext(rootPathFile, false, null);
+    }
+
+    public static FileContext newInstance(File rootPathFile, String visualPathSeparator) throws IOException {
+        return new FileContext(rootPathFile, false, visualPathSeparator);
     }
 
     public static FileContext newInstance(File rootPathFile, boolean create) throws IOException {
-        return new FileContext(rootPathFile, create);
+        return new FileContext(rootPathFile, create, null);
+    }
+
+    public static FileContext newInstance(File rootPathFile, boolean create, String visualPathSeparator) throws IOException {
+        return new FileContext(rootPathFile, create, visualPathSeparator);
     }
 
     public static FileContext newInstance(String rootPath) throws IOException {
-        return new FileContext(rootPath, false);
+        return new FileContext(rootPath, false, null);
     }
 
     public static FileContext newInstance(String rootPath, boolean create) throws IOException {
-        return new FileContext(rootPath, create);
+        return new FileContext(rootPath, create, null);
     }
 
-    private FileContext(File rootPathFile, boolean create) throws IOException {
+    public static FileContext newInstance(String rootPath, boolean create, String visualPathSeparator) throws IOException {
+        return new FileContext(rootPath, create, visualPathSeparator);
+    }
+
+    private FileContext(File rootPathFile, boolean create, String visualPathSeparator) throws IOException {
+        if (visualPathSeparator != null && !visualPathSeparator.equals("")) {
+            this.visualPathSeparator = visualPathSeparator;
+        } else {
+            this.visualPathSeparator = "/";
+        }
+        if (File.separator.equals("\\")) {
+            systemPathSeparator = "\\\\";
+        }else{
+            systemPathSeparator = "/";
+        }
         this.rootPath = rootPathFile.getAbsolutePath();
         this.rootPathFile = rootPathFile;
         if (!this.rootPathFile.exists()) {
@@ -54,7 +78,7 @@ public class FileContext {
             throw new IOException("根路径不是目录");
         }
         this.currentPath = rootPath;
-        this.currentRelativePath = File.separator;
+        this.currentRelativePath = this.visualPathSeparator;
         this.currentPathFile = rootPathFile;
         this.currentFileMap = new LinkedHashMap<>();
         this.currentPathStatistics = new FileDirStatistics();
@@ -62,8 +86,8 @@ public class FileContext {
         loadCurrentPathFiles();
     }
 
-    private FileContext(String rootPath, boolean create) throws IOException {
-        this(new File(rootPath), create);
+    private FileContext(String rootPath, boolean create, String visualPathSeparator) throws IOException {
+        this(new File(rootPath), create, visualPathSeparator);
     }
 
     public String getCurrentPath() {
@@ -107,7 +131,7 @@ public class FileContext {
     }
 
     private void checkFileName(String fileName) {
-        if (fileName == null || fileName.equals("") || fileName.contains(File.separator)) {
+        if (fileName == null || fileName.equals("") || fileName.contains(this.visualPathSeparator)) {
             throw new InvalidFileNameException("非法名称");
         }
     }
@@ -132,7 +156,7 @@ public class FileContext {
     public FileContext openDir(String dirName) throws InvalidFileNameException {
         File toOpenDir = this.currentFileMap.get(dirName);
         if (toOpenDir != null && toOpenDir.isDirectory()) {
-            this.currentRelativePath += dirName + File.separator;
+            this.currentRelativePath += dirName + this.visualPathSeparator;
             this.currentPathFile = toOpenDir;
             this.currentPath = this.currentPathFile.getAbsolutePath();
             loadCurrentPathFiles();
@@ -149,7 +173,7 @@ public class FileContext {
      */
     public FileContext openRootDir() {
         this.currentPath = this.rootPath;
-        this.currentRelativePath = File.separator;
+        this.currentRelativePath = this.visualPathSeparator;
         this.currentPathFile = this.rootPathFile;
         loadCurrentPathFiles();
         return this;
@@ -164,16 +188,14 @@ public class FileContext {
      */
     public FileContext openDirs(String dirNames) throws InvalidFileNameException {
         if (dirNames != null) {
-            String regex = "/";
-            if (File.separator.equals("\\")) {
-                regex = "\\\\";
-            }
-            if (dirNames.startsWith("\\")||dirNames.startsWith("/")) {
-                dirNames = dirNames.substring(1);
-            }
-            String[] split = dirNames.split(regex);
-            for (String dirName : split) {
-                openDir(dirName);
+            if (dirNames.startsWith(this.visualPathSeparator)) {
+                //从根目录开始
+                this.openRootDir().openDirs(dirNames.substring(1));
+            }else{
+                String[] split = dirNames.split(this.visualPathSeparator);
+                for (String dirName : split) {
+                    openDir(dirName);
+                }
             }
         }
         return this;
@@ -209,7 +231,7 @@ public class FileContext {
                 throw new IOException("根目录已经无法再向上级目录跳转");
             } else {
                 this.currentRelativePath = this.currentRelativePath.substring(0, this.currentRelativePath.length() - 1);
-                this.currentRelativePath = this.currentRelativePath.substring(0, this.currentRelativePath.lastIndexOf(File.separator) + 1);
+                this.currentRelativePath = this.currentRelativePath.substring(0, this.currentRelativePath.lastIndexOf(this.visualPathSeparator) + 1);
                 this.currentPathFile = parentFile;
                 this.currentPath = this.currentPathFile.getAbsolutePath();
                 loadCurrentPathFiles();
@@ -258,11 +280,13 @@ public class FileContext {
      */
     public boolean newDirs(String dirNames) {
         boolean result;
-        if (dirNames.startsWith(File.separator)) {
+        if (dirNames.startsWith(this.visualPathSeparator)) {
             //根目录开始
+            dirNames = dirNames.replaceAll(this.visualPathSeparator, this.systemPathSeparator);
             result = new File(this.rootPathFile.getAbsolutePath() + dirNames).mkdirs();
         } else {
             //当前目录开始
+            dirNames = dirNames.replaceAll(this.visualPathSeparator, this.systemPathSeparator);
             result = new File(this.currentPathFile.getAbsolutePath() + File.separator + dirNames).mkdirs();
         }
         loadCurrentPathFiles();
@@ -280,7 +304,7 @@ public class FileContext {
         if (dirNames != null && dirNames.length > 0) {
             StringBuffer buffer = new StringBuffer();
             for (String dirName : dirNames) {
-                buffer.append(dirName).append(File.separator);
+                buffer.append(dirName).append(this.visualPathSeparator);
             }
             buffer.deleteCharAt(buffer.length() - 1);
             result = newDirs(buffer.toString());
